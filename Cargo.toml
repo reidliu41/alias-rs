@@ -1,12 +1,13 @@
 [package]
 name = "alias-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.89"
 description = "A small, interactive alias manager for Fish, Bash, and Zsh"
 license = "MIT"
 readme = "README.md"
 documentation = "https://docs.rs/alias-rs"
+repository = "https://github.com/reidliu41/alias-rs"
 keywords = ["alias", "shell", "bash", "zsh", "fish"]
 categories = ["command-line-utilities"]
 include = [
