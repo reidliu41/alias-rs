@@ -1,0 +1,48 @@
+[package]
+name = "alias-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "A small, interactive alias manager for Fish, Bash, and Zsh"
+license = "MIT"
+readme = "README.md"
+documentation = "https://docs.rs/alias-rs"
+keywords = ["alias", "shell", "bash", "zsh", "fish"]
+categories = ["command-line-utilities"]
+include = [
+    "/src/**",
+    "/tests/**",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/LICENSE",
+]
+
+[lib]
+name = "alias_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "als"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+atomic-write-file = "0.3"
+clap = { version = "4.5", features = ["derive"] }
+console = "0.16"
+dialoguer = { version = "0.12", features = ["fuzzy-select"] }
+fuzzy-matcher = "0.3"
+thiserror = "2"
+toml_edit = "0.25"
+unicode-width = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+
