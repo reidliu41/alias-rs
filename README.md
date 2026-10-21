@@ -6,6 +6,8 @@ readable TOML file.
 
 ## Install
 
+Install the latest release from [crates.io](https://crates.io/crates/alias-rs):
+
 ```console
 cargo install alias-rs
 ```
