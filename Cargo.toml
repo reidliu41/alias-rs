@@ -1,6 +1,6 @@
 [package]
 name = "alias-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.89"
 description = "A small, interactive alias manager for Fish, Bash, and Zsh"
@@ -30,6 +30,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 atomic-write-file = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4.5", features = ["derive"] }
 console = "0.16"
 dialoguer = { version = "0.12", features = ["fuzzy-select"] }

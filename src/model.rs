@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use chrono::{DateTime, FixedOffset};
 use thiserror::Error;
 
 /// One managed shell alias.
@@ -9,6 +10,7 @@ pub struct Alias {
     pub cmd: String,
     pub desc: Option<String>,
     pub tags: Vec<String>,
+    pub created_at: Option<DateTime<FixedOffset>>,
 }
 
 impl Alias {
@@ -24,6 +26,7 @@ impl Alias {
             cmd: cmd.trim().to_owned(),
             desc: normalize_desc(desc),
             tags: normalize_tags(tags)?,
+            created_at: None,
         };
         alias.validate()?;
         Ok(alias)
@@ -46,6 +49,14 @@ impl Alias {
         }
 
         Ok(())
+    }
+
+    /// Returns the creation time used by list views, or `-` for legacy entries.
+    pub fn created_at_display(&self) -> String {
+        self.created_at
+            .as_ref()
+            .map(|created_at| created_at.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_else(|| "-".to_owned())
     }
 }
 

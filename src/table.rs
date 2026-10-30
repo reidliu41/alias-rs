@@ -11,6 +11,7 @@ pub fn render(aliases: &[Alias]) -> String {
         .iter()
         .map(|alias| {
             [
+                alias.created_at_display(),
                 alias.name.clone(),
                 alias.cmd.clone(),
                 alias.desc.clone().unwrap_or_default(),
@@ -19,7 +20,7 @@ pub fn render(aliases: &[Alias]) -> String {
         })
         .collect::<Vec<_>>();
 
-    let headers = ["NAME", "COMMAND", "DESCRIPTION", "TAGS"];
+    let headers = ["CREATED", "NAME", "COMMAND", "DESCRIPTION", "TAGS"];
     let mut widths = headers.map(UnicodeWidthStr::width);
     for row in &rows {
         for (index, value) in row.iter().enumerate() {
@@ -36,7 +37,7 @@ pub fn render(aliases: &[Alias]) -> String {
     output
 }
 
-fn write_row(output: &mut String, values: &[&str; 4], widths: &[usize; 4]) {
+fn write_row(output: &mut String, values: &[&str; 5], widths: &[usize; 5]) {
     for (index, value) in values.iter().enumerate() {
         output.push_str(value);
         if index + 1 != values.len() {
@@ -53,17 +54,19 @@ mod tests {
 
     #[test]
     fn renders_unicode_descriptions() {
-        let aliases = [
-            Alias::new(
-                "gs",
-                "git status",
-                Some("查看状态".into()),
-                vec!["git".into()],
-            )
-            .unwrap(),
-            Alias::new("ll", "ls -lah", None, vec![]).unwrap(),
-        ];
+        let mut first = Alias::new(
+            "gs",
+            "git status",
+            Some("查看状态".into()),
+            vec!["git".into()],
+        )
+        .unwrap();
+        first.created_at =
+            Some(chrono::DateTime::parse_from_rfc3339("2026-10-30T09:24:17-07:00").unwrap());
+        let aliases = [first, Alias::new("ll", "ls -lah", None, vec![]).unwrap()];
         let table = render(&aliases);
+        assert!(table.contains("CREATED"));
+        assert!(table.contains("2026-10-30 09:24"));
         assert!(table.contains("查看状态"));
         assert!(table.contains("git"));
     }

@@ -78,7 +78,8 @@ fn filtered_aliases(aliases: &[Alias], matcher: &SkimMatcherV2, query: &str) -> 
         .enumerate()
         .filter_map(|(index, alias)| {
             let searchable = format!(
-                "{} {} {} {}",
+                "{} {} {} {} {}",
+                alias.created_at_display(),
                 alias.name,
                 alias.cmd,
                 alias.desc.as_deref().unwrap_or_default(),
@@ -147,16 +148,7 @@ impl Screen {
             for (position, alias_index) in matches.iter().enumerate().skip(start).take(visible_rows)
             {
                 let alias = &aliases[*alias_index];
-                let mut details = format!("{}  {}", alias.name, alias.cmd);
-                if let Some(desc) = &alias.desc {
-                    details.push_str("  # ");
-                    details.push_str(desc);
-                }
-                if !alias.tags.is_empty() {
-                    details.push_str("  [");
-                    details.push_str(&alias.tags.join(", "));
-                    details.push(']');
-                }
+                let details = alias_details(alias);
                 let prefix = if position == selected { "❯ " } else { "  " };
                 let line = format!("{prefix}{}", fit(&details, width.saturating_sub(2)));
                 let line = if position == selected {
@@ -191,6 +183,25 @@ impl Screen {
         }
         Ok(())
     }
+}
+
+fn alias_details(alias: &Alias) -> String {
+    let mut details = format!(
+        "{:<16}  {}  {}",
+        alias.created_at_display(),
+        alias.name,
+        alias.cmd
+    );
+    if let Some(desc) = &alias.desc {
+        details.push_str("  # ");
+        details.push_str(desc);
+    }
+    if !alias.tags.is_empty() {
+        details.push_str("  [");
+        details.push_str(&alias.tags.join(", "));
+        details.push(']');
+    }
+    details
 }
 
 impl Drop for Screen {
@@ -234,14 +245,17 @@ mod tests {
 
     #[test]
     fn search_matches_all_alias_fields() {
+        let mut first = Alias::new(
+            "gs",
+            "git status",
+            Some("Working tree".into()),
+            vec!["git".into()],
+        )
+        .unwrap();
+        first.created_at =
+            Some(chrono::DateTime::parse_from_rfc3339("2026-10-30T09:24:17-07:00").unwrap());
         let aliases = vec![
-            Alias::new(
-                "gs",
-                "git status",
-                Some("Working tree".into()),
-                vec!["git".into()],
-            )
-            .unwrap(),
+            first,
             Alias::new("ll", "ls -lah", None, vec!["files".into()]).unwrap(),
         ];
         let matcher = SkimMatcherV2::default();
@@ -249,11 +263,23 @@ mod tests {
         assert_eq!(filtered_aliases(&aliases, &matcher, "work"), [0]);
         assert_eq!(filtered_aliases(&aliases, &matcher, "files"), [1]);
         assert_eq!(filtered_aliases(&aliases, &matcher, "lah"), [1]);
+        assert_eq!(filtered_aliases(&aliases, &matcher, "2026-10-30"), [0]);
     }
 
     #[test]
     fn truncates_without_splitting_unicode() {
         assert_eq!(fit("查看目录内容", 5), "查看…");
         assert_eq!(fit("abcdef", 4), "abc…");
+    }
+
+    #[test]
+    fn displays_creation_time_in_fixed_width_column() {
+        let mut alias = Alias::new("lzz", "ls -lah", None, vec![]).unwrap();
+        alias.created_at =
+            Some(chrono::DateTime::parse_from_rfc3339("2026-10-30T09:24:17-07:00").unwrap());
+        assert_eq!(alias_details(&alias), "2026-10-30 09:24  lzz  ls -lah");
+
+        let legacy = Alias::new("lz", "ls -lah", None, vec![]).unwrap();
+        assert_eq!(alias_details(&legacy), "-                 lz  ls -lah");
     }
 }

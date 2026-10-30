@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use atomic_write_file::AtomicWriteFile;
+use chrono::{DateTime, Local, SecondsFormat};
 use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
@@ -60,7 +61,10 @@ impl Store {
         aliases_from_document(&loaded.document, &self.config_path)
     }
 
-    pub fn add(&self, alias: Alias) -> Result<(), StoreError> {
+    pub fn add(&self, mut alias: Alias) -> Result<(), StoreError> {
+        if alias.created_at.is_none() {
+            alias.created_at = Some(Local::now().fixed_offset());
+        }
         alias.validate()?;
         let _lock = self.lock(true)?;
         let mut loaded = self.load_document()?;
@@ -315,8 +319,25 @@ fn alias_from_inline(name: &str, table: &InlineTable, path: &Path) -> Result<Ali
         None => Vec::new(),
     };
 
-    Alias::new(name, cmd, desc, tags)
-        .map_err(|error| invalid_config(path, format!("alias `{name}` is invalid: {error}")))
+    let created_at = match table.get("created_at") {
+        Some(value) => {
+            let value = value.as_str().ok_or_else(|| {
+                invalid_config(path, format!("alias `{name}` has non-string `created_at`"))
+            })?;
+            Some(DateTime::parse_from_rfc3339(value).map_err(|error| {
+                invalid_config(
+                    path,
+                    format!("alias `{name}` has invalid `created_at`: {error}"),
+                )
+            })?)
+        }
+        None => None,
+    };
+
+    let mut alias = Alias::new(name, cmd, desc, tags)
+        .map_err(|error| invalid_config(path, format!("alias `{name}` is invalid: {error}")))?;
+    alias.created_at = created_at;
+    Ok(alias)
 }
 
 fn aliases_table_mut<'a>(
@@ -332,6 +353,12 @@ fn aliases_table_mut<'a>(
 fn alias_item(alias: &Alias) -> Item {
     let mut table = InlineTable::new();
     table.insert("cmd", Value::from(alias.cmd.clone()));
+    if let Some(created_at) = &alias.created_at {
+        table.insert(
+            "created_at",
+            Value::from(created_at.to_rfc3339_opts(SecondsFormat::Secs, false)),
+        );
+    }
     if let Some(desc) = &alias.desc {
         table.insert("desc", Value::from(desc.clone()));
     }
@@ -426,10 +453,11 @@ mod tests {
             .unwrap();
 
         let contents = fs::read_to_string(store.config_path()).unwrap();
-        assert!(
-            contents
-                .contains("gs = { cmd = \"git status\", desc = \"Git status\", tags = [\"git\"] }")
-        );
+        assert!(contents.contains("gs = { cmd = \"git status\", created_at = \""));
+        assert!(contents.contains("desc = \"Git status\", tags = [\"git\"] }"));
+
+        let created_at = store.list().unwrap()[0].created_at;
+        assert!(created_at.is_some());
 
         let updated = store
             .edit(
@@ -445,6 +473,7 @@ mod tests {
         assert_eq!(updated.cmd, "git status --short");
         assert_eq!(updated.desc.as_deref(), Some("Git status"));
         assert_eq!(updated.tags, ["git", "daily"]);
+        assert_eq!(updated.created_at, created_at);
         assert!(store.backup_path().exists());
 
         let renamed = store
@@ -459,10 +488,27 @@ mod tests {
         assert_eq!(renamed.name, "gst");
         assert_eq!(renamed.desc.as_deref(), Some("Git status"));
         assert_eq!(renamed.tags, ["git", "daily"]);
+        assert_eq!(renamed.created_at, created_at);
 
         let removed = store.delete("gst").unwrap();
         assert_eq!(removed.name, "gst");
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn loads_legacy_aliases_without_inventing_creation_times() {
+        let directory = tempdir().unwrap();
+        let store = Store::in_directory(directory.path());
+        fs::write(
+            store.config_path(),
+            "version = 1\n\n[aliases]\nll = { cmd = \"ls -lah\" }\n",
+        )
+        .unwrap();
+
+        let alias = &store.list().unwrap()[0];
+        assert_eq!(alias.name, "ll");
+        assert_eq!(alias.created_at, None);
+        assert_eq!(alias.created_at_display(), "-");
     }
 
     #[test]

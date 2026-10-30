@@ -58,6 +58,28 @@ fn command_line_crud_flow() {
 }
 
 #[test]
+fn new_aliases_include_creation_times_in_storage_and_lists() {
+    let directory = tempdir().unwrap();
+    assert!(
+        als(directory.path())
+            .args(["add", "ll", "ls -lah"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let catalog = fs::read_to_string(directory.path().join("aliases.toml")).unwrap();
+    assert!(catalog.contains("created_at = \""));
+
+    let output = als(directory.path()).arg("list").output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("CREATED"));
+    assert!(stdout.contains("ll"));
+    assert!(!stdout.contains("-                 ll"));
+}
+
+#[test]
 fn shell_initializers_emit_aliases_wrappers_and_completions() {
     let directory = tempdir().unwrap();
     assert!(

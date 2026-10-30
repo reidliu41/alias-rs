@@ -63,7 +63,7 @@ als del gs --force
 
 In an initialized interactive shell, `als list` opens a searchable selector:
 
-- Type to fuzzy-search names, commands, descriptions, and tags.
+- Type to fuzzy-search creation times, names, commands, descriptions, and tags.
 - Use Up/Down to move and Enter to run the selected command immediately.
 - Use Right to put the command in an editable input line; press Enter to run it.
 - Use Left, Escape, or Ctrl-C to exit without running anything.
@@ -97,9 +97,12 @@ The catalog is stored at `$XDG_CONFIG_HOME/als/aliases.toml`, or
 version = 1
 
 [aliases]
-gs = { cmd = "git status", desc = "Show Git status", tags = ["git"] }
-ll = { cmd = "ls -lah" }
+gs = { cmd = "git status", created_at = "2026-10-30T09:24:17-07:00", desc = "Show Git status", tags = ["git"] }
+ll = { cmd = "ls -lah", created_at = "2026-10-30T09:25:03-07:00" }
 ```
+
+New aliases record their creation time automatically. Aliases created by older
+versions remain fully usable and display `-` instead of an invented timestamp.
 
 Set `ALS_CONFIG_DIR` to use another directory. This is useful for testing or
 keeping a separate catalog.
