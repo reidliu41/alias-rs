@@ -42,7 +42,47 @@ pub fn render_init(aliases: &[Alias]) -> String {
     script.push_str(
         r#"unalias als 2>/dev/null || true
 unfunction als 2>/dev/null || true
+unfunction __als_history_stream 2>/dev/null || true
+function __als_history_stream {
+    builtin fc -l -n -r -t '%s|' 1 2>/dev/null
+}
 function als {
+    if (( $# == 0 )); then
+        __als_history_stream | command als __menu zsh
+        local __als_status=${pipestatus[2]}
+        if (( __als_status == 0 )); then
+            source <(command als __sync zsh)
+        fi
+        return $__als_status
+    fi
+
+    if [[ ( "$1" == "history" || "$1" == "h" ) && "${2-}" != "-h" && "${2-}" != "--help" ]]; then
+        __als_history_stream | command als __history zsh
+        local __als_status=${pipestatus[2]}
+        if (( __als_status == 0 )); then
+            source <(command als __sync zsh)
+        fi
+        return $__als_status
+    fi
+
+    if [[ "$1" == "add" ]]; then
+        local __als_argument
+        local __als_use_history=0
+        for __als_argument in "${@:2}"; do
+            case "$__als_argument" in
+                -l|--last|-l[0-9]*|--last=[0-9]*) __als_use_history=1 ;;
+            esac
+        done
+        if (( __als_use_history )); then
+            __als_history_stream | command als __add-history zsh "${@:2}"
+            local __als_status=${pipestatus[2]}
+            if (( __als_status == 0 )); then
+                source <(command als __sync zsh)
+            fi
+            return $__als_status
+        fi
+    fi
+
     if [[ "${1-}" == "list" && -t 0 && -t 1 && -t 2 && "${2-}" != "-h" && "${2-}" != "--help" ]]; then
         local __als_result="$(command als __select "${@:2}")"
         local __als_status=$?
@@ -75,13 +115,9 @@ function als {
     local __als_status=$?
 
     if (( __als_status == 0 )); then
-        if (( $# == 0 )); then
-            source <(command als __sync zsh)
-        else
-            case "$1" in
-                add|del|edit) source <(command als __sync zsh) ;;
-            esac
-        fi
+        case "$1" in
+            add|del|edit) source <(command als __sync zsh) ;;
+        esac
     fi
 
     return $__als_status
@@ -123,6 +159,8 @@ function __als_complete {
     if (( CURRENT == 2 )); then
         __als_candidates=(
             'add:Add an alias'
+            'history:Add from shell history'
+            'h:Add from shell history'
             'del:Delete an alias'
             'edit:Edit an alias'
             'list:List aliases'
@@ -146,7 +184,19 @@ function __als_complete {
     fi
 
     case "$__als_command" in
-        add|edit)
+        add)
+            __als_candidates=(
+                '-l:Use the Nth recent history entry'
+                '--last:Use the Nth recent history entry'
+                '-d:Set the description'
+                '--description:Set the description'
+                '-t:Set a tag'
+                '--tag:Set a tag'
+                '-h:Print help'
+                '--help:Print help'
+            )
+            ;;
+        edit)
             __als_candidates=(
                 '-d:Set the description'
                 '--description:Set the description'
@@ -217,6 +267,10 @@ mod tests {
         assert!(script.contains("function gs {"));
         assert!(script.contains("eval 'git status \"$@\"'"));
         assert!(script.contains("command als __select"));
+        assert!(script.contains("command als __menu zsh"));
+        assert!(script.contains("command als __history zsh"));
+        assert!(script.contains("command als __add-history zsh"));
+        assert!(script.contains("builtin fc -l -n -r -t '%s|' 1"));
         assert!(script.contains("command als __sync zsh"));
         assert!(script.contains("compdef __als_complete als"));
         assert!(script.contains("'gs:Git status'"));

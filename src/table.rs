@@ -2,6 +2,10 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::model::Alias;
 
+pub fn added(alias: &Alias) -> String {
+    format!("Added alias: {}  -->  {}\n", alias.name, alias.cmd)
+}
+
 pub fn render(aliases: &[Alias]) -> String {
     if aliases.is_empty() {
         return "No aliases found.\n".to_owned();

@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use tempfile::tempdir;
 
@@ -22,6 +23,10 @@ fn command_line_crud_flow() {
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "Added alias: gs  -->  git status\n"
     );
 
     let output = als(directory.path())
@@ -55,6 +60,39 @@ fn command_line_crud_flow() {
 
     let catalog = fs::read_to_string(directory.path().join("aliases.toml")).unwrap();
     assert!(!catalog.contains("gs ="));
+}
+
+#[test]
+fn adds_a_numbered_live_history_entry() {
+    let directory = tempdir().unwrap();
+    let mut child = als(directory.path())
+        .args(["__add-history", "bash", "-l2", "gst"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            b"    1  1793423500|git status\n    2  1793423520|cargo test\n    3  1793423529|als add -l ignored\n",
+        )
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "Added alias: gst  -->  git status\n"
+    );
+
+    let catalog = fs::read_to_string(directory.path().join("aliases.toml")).unwrap();
+    assert!(catalog.contains("gst = { cmd = \"git status\""));
 }
 
 #[test]

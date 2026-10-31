@@ -1,15 +1,17 @@
+use std::ffi::OsString;
 use std::io::{self, IsTerminal};
+use std::num::NonZeroUsize;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{Confirm, theme::ColorfulTheme};
 
-use crate::interactive;
 use crate::model::{Alias, AliasPatch, normalize_desc, normalize_tags};
 use crate::selector::{self, Selection};
 use crate::store::Store;
 use crate::table;
 use crate::{bash, fish, zsh};
+use crate::{history, interactive};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -27,6 +29,9 @@ struct Cli {
 enum Command {
     /// Add an alias.
     Add(AddArgs),
+    /// Add an alias from shell history.
+    #[command(visible_alias = "h")]
+    History,
     /// Delete an alias.
     Del(DelArgs),
     /// Edit an alias.
@@ -42,14 +47,34 @@ enum Command {
     /// Open the interactive alias selector.
     #[command(name = "__select", hide = true)]
     Select(ListArgs),
+    /// Open the main menu with live shell history.
+    #[command(name = "__menu", hide = true)]
+    Menu(ShellArgs),
+    /// Open the live shell history selector.
+    #[command(name = "__history", hide = true)]
+    ShellHistory(ShellArgs),
+    /// Add an alias from a numbered live shell history entry.
+    #[command(name = "__add-history", hide = true)]
+    AddHistory(AddHistoryArgs),
 }
 
 #[derive(Debug, Args)]
 struct AddArgs {
     /// Alias name.
-    name: String,
+    name: Option<String>,
     /// Command the alias runs. Quote commands containing spaces.
-    cmd: String,
+    cmd: Option<String>,
+    /// Use the Nth most recent usable shell history entry (default: 1).
+    #[arg(
+        short = 'l',
+        long = "last",
+        value_name = "N",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "1",
+        conflicts_with = "cmd"
+    )]
+    last: Option<NonZeroUsize>,
     /// Optional description.
     #[arg(short = 'd', long = "description")]
     description: Option<String>,
@@ -94,8 +119,16 @@ struct ShellArgs {
     shell: String,
 }
 
+#[derive(Debug, Args)]
+struct AddHistoryArgs {
+    /// Shell name: fish, bash, or zsh.
+    shell: String,
+    #[command(flatten)]
+    add: AddArgs,
+}
+
 pub fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(normalize_last_args(std::env::args_os()));
     let store = Store::discover()?;
 
     match cli.command {
@@ -103,28 +136,110 @@ pub fn run() -> Result<()> {
             if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
                 bail!("interactive mode requires a terminal; use `als list` instead");
             }
-            interactive::run(&store)
+            interactive::run(&store, None)
         }
         Some(Command::Add(args)) => add(&store, args),
+        Some(Command::History) => bail!(live_history_hint()),
         Some(Command::Del(args)) => delete(&store, args),
         Some(Command::Edit(args)) => edit(&store, args),
         Some(Command::List(args)) => list(&store, args),
         Some(Command::Init(args)) => emit_shell(&store, &args.shell, true),
         Some(Command::Sync(args)) => emit_shell(&store, &args.shell, false),
         Some(Command::Select(args)) => select(&store, args),
+        Some(Command::Menu(args)) => menu_with_history(&store, &args.shell),
+        Some(Command::ShellHistory(args)) => history_selector(&store, &args.shell),
+        Some(Command::AddHistory(args)) => add_from_history(&store, args),
     }
 }
 
+fn normalize_last_args(arguments: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
+    let mut after_separator = false;
+    arguments
+        .into_iter()
+        .map(|argument| {
+            if argument == "--" {
+                after_separator = true;
+                return argument;
+            }
+            if after_separator {
+                return argument;
+            }
+
+            let Some(value) = argument.to_str() else {
+                return argument;
+            };
+            let Some(index) = value.strip_prefix("-l") else {
+                return argument;
+            };
+            if !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()) {
+                OsString::from(format!("--last={index}"))
+            } else {
+                argument
+            }
+        })
+        .collect()
+}
+
 fn add(store: &Store, args: AddArgs) -> Result<()> {
+    if args.last.is_some() {
+        bail!(live_history_hint());
+    }
+    let name = args
+        .name
+        .ok_or_else(|| anyhow::anyhow!("missing alias name"))?;
+    let cmd = args.cmd.ok_or_else(|| {
+        anyhow::anyhow!("missing command; provide one or use `als add -l [NAME]`")
+    })?;
     let alias = Alias::new(
-        args.name,
-        args.cmd,
+        name,
+        cmd,
         normalize_desc(args.description),
         normalize_tags(args.tags)?,
     )?;
     store.add(alias.clone())?;
-    println!("Added alias `{}`.", alias.name);
+    print!("{}", table::added(&alias));
     Ok(())
+}
+
+fn menu_with_history(store: &Store, shell: &str) -> Result<()> {
+    if !io::stderr().is_terminal() {
+        bail!("interactive mode requires a terminal");
+    }
+    let entries = history::read_from_stdin(shell)?;
+    interactive::run(store, Some(&entries))
+}
+
+fn history_selector(store: &Store, shell: &str) -> Result<()> {
+    if !io::stderr().is_terminal() {
+        bail!("interactive history selection requires a terminal");
+    }
+    let entries = history::read_from_stdin(shell)?;
+    history::select_and_add(store, &entries)?;
+    Ok(())
+}
+
+fn add_from_history(store: &Store, args: AddHistoryArgs) -> Result<()> {
+    let index = args
+        .add
+        .last
+        .ok_or_else(|| anyhow::anyhow!("missing `--last` history index"))?;
+    if args.add.cmd.is_some() {
+        bail!("a command cannot be combined with `--last`");
+    }
+    let entries = history::read_from_stdin(&args.shell)?;
+    history::add_last(
+        store,
+        &entries,
+        index,
+        args.add.name,
+        normalize_desc(args.add.description),
+        normalize_tags(args.add.tags)?,
+    )?;
+    Ok(())
+}
+
+fn live_history_hint() -> &'static str {
+    "live shell history is unavailable; initialize als in your shell and run this command through the shell wrapper"
 }
 
 fn delete(store: &Store, args: DelArgs) -> Result<()> {
@@ -242,7 +357,45 @@ mod tests {
         let Some(Command::Add(args)) = cli.command else {
             panic!("expected add command");
         };
-        assert_eq!(args.name, "gs");
+        assert_eq!(args.name.as_deref(), Some("gs"));
+        assert_eq!(args.cmd.as_deref(), Some("git status"));
+        assert_eq!(args.last, None);
         assert_eq!(args.tags, ["git"]);
+    }
+
+    #[test]
+    fn parses_history_commands_and_last_indices() {
+        assert!(matches!(
+            Cli::try_parse_from(["als", "history"]).unwrap().command,
+            Some(Command::History)
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["als", "h"]).unwrap().command,
+            Some(Command::History)
+        ));
+
+        for (arguments, expected_index, expected_name) in [
+            (vec!["als", "add", "-l", "ll"], 1, Some("ll")),
+            (vec!["als", "add", "-l2", "gs"], 2, Some("gs")),
+            (vec!["als", "add", "--last=12"], 12, None),
+        ] {
+            let cli = Cli::try_parse_from(normalize_last_args(
+                arguments.into_iter().map(OsString::from),
+            ))
+            .unwrap();
+            let Some(Command::Add(args)) = cli.command else {
+                panic!("expected add command");
+            };
+            assert_eq!(args.last.map(NonZeroUsize::get), Some(expected_index));
+            assert_eq!(args.name.as_deref(), expected_name);
+            assert_eq!(args.cmd, None);
+        }
+
+        assert!(
+            Cli::try_parse_from(normalize_last_args(
+                ["als", "add", "-l0", "bad"].map(OsString::from)
+            ))
+            .is_err()
+        );
     }
 }

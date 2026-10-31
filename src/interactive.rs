@@ -1,16 +1,17 @@
 use anyhow::{Context, Result};
 use dialoguer::{Confirm, FuzzySelect, Input, Select, theme::ColorfulTheme};
 
+use crate::history::{self, HistoryEntry};
 use crate::model::{Alias, AliasPatch, normalize_desc, normalize_tags};
 use crate::store::Store;
 use crate::table;
 
-pub fn run(store: &Store) -> Result<()> {
+pub fn run(store: &Store, shell_history: Option<&[HistoryEntry]>) -> Result<()> {
     let theme = ColorfulTheme::default();
     loop {
         let Some(choice) = Select::with_theme(&theme)
             .with_prompt("What would you like to do?")
-            .items(["Add", "Del", "Edit", "List", "Quit"])
+            .items(["Add", "History", "Del", "Edit", "List", "Quit"])
             .default(0)
             .interact_opt()
             .context("interactive menu failed")?
@@ -20,9 +21,17 @@ pub fn run(store: &Store) -> Result<()> {
 
         match choice {
             0 => add(store, &theme)?,
-            1 => delete(store, &theme)?,
-            2 => edit(store, &theme, None)?,
-            3 => print!("{}", table::render(&store.list()?)),
+            1 => match shell_history {
+                Some(entries) => {
+                    history::select_and_add(store, entries)?;
+                }
+                None => eprintln!(
+                    "Live shell history is unavailable. Initialize als in your shell, then run `als` again."
+                ),
+            },
+            2 => delete(store, &theme)?,
+            3 => edit(store, &theme, None)?,
+            4 => print!("{}", table::render(&store.list()?)),
             _ => break,
         }
     }
@@ -65,7 +74,7 @@ fn add(store: &Store, theme: &ColorfulTheme) -> Result<()> {
 
     let alias = Alias::new(name, cmd, normalize_desc(Some(desc)), parse_tags(&tags)?)?;
     store.add(alias.clone())?;
-    println!("Added alias `{}`.", alias.name);
+    print!("{}", table::added(&alias));
     Ok(())
 }
 

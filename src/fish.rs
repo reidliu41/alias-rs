@@ -28,8 +28,47 @@ pub fn render_sync(aliases: &[Alias]) -> String {
 pub fn render_init(aliases: &[Alias]) -> String {
     let mut script = render_sync(aliases);
     script.push_str(
-        r#"functions --erase als 2>/dev/null
+        r#"functions --erase als __als_history_stream 2>/dev/null
+function __als_history_stream
+    builtin history search --show-time='%s|' --null
+end
 function als --description 'Manage shell aliases'
+    if test (count $argv) -eq 0
+        __als_history_stream | command als __menu fish
+        set -l __als_status $pipestatus[2]
+        if test $__als_status -eq 0
+            command als __sync fish | source
+        end
+        return $__als_status
+    end
+
+    if contains -- $argv[1] history h; and not contains -- $argv[2] -h --help
+        __als_history_stream | command als __history fish
+        set -l __als_status $pipestatus[2]
+        if test $__als_status -eq 0
+            command als __sync fish | source
+        end
+        return $__als_status
+    end
+
+    if test "$argv[1]" = add
+        set -l __als_use_history 0
+        for __als_argument in $argv[2..-1]
+            if contains -- $__als_argument -l --last; or string match --quiet --regex '^-l[0-9]+$' $__als_argument; or string match --quiet --regex '^--last=[0-9]+$' $__als_argument
+                set __als_use_history 1
+                break
+            end
+        end
+        if test $__als_use_history -eq 1
+            __als_history_stream | command als __add-history fish $argv[2..-1]
+            set -l __als_status $pipestatus[2]
+            if test $__als_status -eq 0
+                command als __sync fish | source
+            end
+            return $__als_status
+        end
+    end
+
     if test (count $argv) -gt 0; and test "$argv[1]" = list; and isatty stdin; and isatty stdout; and isatty stderr
         if not contains -- -h $argv[2..-1]; and not contains -- --help $argv[2..-1]
             set -l __als_result (command als __select $argv[2..-1])
@@ -62,13 +101,9 @@ function als --description 'Manage shell aliases'
     set -l __als_status $status
 
     if test $__als_status -eq 0
-        if test (count $argv) -eq 0
-            command als __sync fish | source
-        else
-            switch $argv[1]
-                case add del edit
-                    command als __sync fish | source
-            end
+        switch $argv[1]
+            case add del edit
+                command als __sync fish | source
         end
     end
 
@@ -99,12 +134,15 @@ function __als_needs_alias
 end
 complete -c als -f
 complete -c als -n '__als_needs_command' -a add -d 'Add an alias'
+complete -c als -n '__als_needs_command' -a history -d 'Add from shell history'
+complete -c als -n '__als_needs_command' -a h -d 'Add from shell history'
 complete -c als -n '__als_needs_command' -a del -d 'Delete an alias'
 complete -c als -n '__als_needs_command' -a edit -d 'Edit an alias'
 complete -c als -n '__als_needs_command' -a list -d 'List aliases'
 complete -c als -s h -l help -d 'Print help'
 complete -c als -s V -l version -d 'Print version'
 complete -c als -n '__fish_seen_subcommand_from add edit' -s d -l description -x -d 'Set the description'
+complete -c als -n '__fish_seen_subcommand_from add' -s l -l last -d 'Use the Nth recent history entry'
 complete -c als -n '__fish_seen_subcommand_from add edit list' -s t -l tag -x -d 'Set or filter by tag'
 complete -c als -n '__fish_seen_subcommand_from del' -s f -l force -d 'Delete without confirmation'
 "#,
@@ -159,6 +197,10 @@ mod tests {
         assert!(script.contains("alias 'gs' 'git status'"));
         assert!(script.contains("function als"));
         assert!(script.contains("command als __select"));
+        assert!(script.contains("command als __menu fish"));
+        assert!(script.contains("command als __history fish"));
+        assert!(script.contains("command als __add-history fish"));
+        assert!(script.contains("builtin history search --show-time='%s|' --null"));
         assert!(script.contains("command als __sync fish | source"));
         assert!(script.contains("-a add -d 'Add an alias'"));
         assert!(script.contains("-a 'gs' -d 'Git status'"));

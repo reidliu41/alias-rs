@@ -50,7 +50,7 @@ Run `als` without arguments to open the interactive menu:
 als
 ```
 
-The four management commands also work directly:
+The management commands also work directly:
 
 ```console
 als add gs "git status" -d "Show Git status" -t git
@@ -60,6 +60,38 @@ als list --tag git
 als del gs
 als del gs --force
 ```
+
+Successful additions show exactly what was saved:
+
+```console
+$ als add gs "git status"
+Added alias: gs  -->  git status
+```
+
+Create an alias from the current shell's live history with `als history` (or
+the shorter `als h`). It opens a numbered, fuzzy-searchable list; select a
+command, enter an alias name, and it is saved immediately. History times are
+shown in a compact relative form such as `42s ago`, `5h ago`, or `2d ago`;
+entries whose shell history has no timestamp display `-`.
+
+For the quickest path, `-l` uses the most recent usable command and `-lN`
+uses item N from the same numbered history list:
+
+```console
+als add -l gs
+als add -l2 test
+als add --last=12 build
+```
+
+Omit the name to be prompted for it:
+
+```console
+als add -l
+```
+
+History is read fresh from Fish, Bash, or Zsh each time. `als` does not import
+or maintain a second history database. Blank entries, duplicates, and `als`
+management commands are excluded.
 
 In an initialized interactive shell, `als list` opens a searchable selector:
 

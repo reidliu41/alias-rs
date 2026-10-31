@@ -7,6 +7,7 @@ pub mod store;
 pub mod zsh;
 
 mod cli;
+mod history;
 mod interactive;
 mod selector;
 mod table;

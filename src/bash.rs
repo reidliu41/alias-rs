@@ -46,7 +46,48 @@ pub fn render_init(aliases: &[Alias]) -> String {
     script.push_str(
         r#"unalias -- als 2>/dev/null || true
 unset -f als 2>/dev/null || true
+unset -f __als_history_stream 2>/dev/null || true
+function __als_history_stream {
+    local HISTTIMEFORMAT='%s|'
+    builtin history 2>/dev/null
+}
 function als {
+    if (( $# == 0 )); then
+        __als_history_stream | command als __menu bash
+        local __als_status=${PIPESTATUS[1]}
+        if (( __als_status == 0 )); then
+            source <(command als __sync bash)
+        fi
+        return "$__als_status"
+    fi
+
+    if [[ ( "$1" == "history" || "$1" == "h" ) && "${2-}" != "-h" && "${2-}" != "--help" ]]; then
+        __als_history_stream | command als __history bash
+        local __als_status=${PIPESTATUS[1]}
+        if (( __als_status == 0 )); then
+            source <(command als __sync bash)
+        fi
+        return "$__als_status"
+    fi
+
+    if [[ "$1" == "add" ]]; then
+        local __als_argument
+        local __als_use_history=0
+        for __als_argument in "${@:2}"; do
+            case "$__als_argument" in
+                -l|--last|-l[0-9]*|--last=[0-9]*) __als_use_history=1 ;;
+            esac
+        done
+        if (( __als_use_history )); then
+            __als_history_stream | command als __add-history bash "${@:2}"
+            local __als_status=${PIPESTATUS[1]}
+            if (( __als_status == 0 )); then
+                source <(command als __sync bash)
+            fi
+            return "$__als_status"
+        fi
+    fi
+
     if [[ "${1-}" == "list" && -t 0 && -t 1 && -t 2 && "${2-}" != "-h" && "${2-}" != "--help" ]]; then
         local __als_result
         __als_result="$(command als __select "${@:2}")"
@@ -80,13 +121,9 @@ function als {
     local __als_status=$?
 
     if (( __als_status == 0 )); then
-        if (( $# == 0 )); then
-            source <(command als __sync bash)
-        else
-            case "$1" in
-                add|del|edit) source <(command als __sync bash) ;;
-            esac
-        fi
+        case "$1" in
+            add|del|edit) source <(command als __sync bash) ;;
+        esac
     fi
 
     return "$__als_status"
@@ -122,14 +159,15 @@ function __als_complete {
     fi
 
     if (( COMP_CWORD == 1 )); then
-        __als_candidates=(add del edit list -h --help -V --version)
+        __als_candidates=(add history h del edit list -h --help -V --version)
     elif [[ "$__als_previous" == "-t" || "$__als_previous" == "--tag" ]]; then
         __als_candidates=("${__als_tags[@]}")
     elif (( COMP_CWORD == 2 )) && [[ "$__als_command" == "del" || "$__als_command" == "edit" ]]; then
         __als_candidates=("${__als_aliases[@]}")
     else
         case "$__als_command" in
-            add|edit) __als_candidates=(-d --description -t --tag -h --help) ;;
+            add) __als_candidates=(-l --last -d --description -t --tag -h --help) ;;
+            edit) __als_candidates=(-d --description -t --tag -h --help) ;;
             del) __als_candidates=(-f --force -h --help) ;;
             list) __als_candidates=(-t --tag -h --help) ;;
         esac
@@ -181,6 +219,11 @@ mod tests {
         assert!(script.contains("function gs {"));
         assert!(script.contains("eval 'git status \"$@\"'"));
         assert!(script.contains("command als __select"));
+        assert!(script.contains("command als __menu bash"));
+        assert!(script.contains("command als __history bash"));
+        assert!(script.contains("command als __add-history bash"));
+        assert!(script.contains("local HISTTIMEFORMAT='%s|'"));
+        assert!(script.contains("builtin history 2>/dev/null"));
         assert!(script.contains("command als __sync bash"));
         assert!(script.contains("complete -o bashdefault"));
         assert!(script.contains("local -a __als_aliases=( 'gs' )"));
