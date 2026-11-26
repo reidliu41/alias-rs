@@ -307,6 +307,7 @@ fn select(store: &Store, args: ListArgs) -> Result<()> {
     match selector::run(&aliases)? {
         Selection::Execute(command) => println!("execute\n{command}"),
         Selection::Insert(command) => println!("insert\n{command}"),
+        Selection::Edit(name) => println!("edit\n{name}"),
         Selection::Cancel => {}
     }
     Ok(())

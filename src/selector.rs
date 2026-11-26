@@ -12,6 +12,7 @@ use crate::model::Alias;
 pub enum Selection {
     Execute(String),
     Insert(String),
+    Edit(String),
     Cancel,
 }
 
@@ -56,7 +57,10 @@ pub fn run(aliases: &[Alias]) -> Result<Selection> {
             Key::ArrowRight if !matches.is_empty() => {
                 return Ok(Selection::Insert(aliases[matches[selected]].cmd.clone()));
             }
-            Key::ArrowLeft | Key::Escape | Key::CtrlC => return Ok(Selection::Cancel),
+            Key::ArrowLeft if !matches.is_empty() => {
+                return Ok(Selection::Edit(aliases[matches[selected]].name.clone()));
+            }
+            Key::Escape | Key::CtrlC => return Ok(Selection::Cancel),
             Key::Backspace => {
                 query.pop();
                 selected = 0;
@@ -213,7 +217,7 @@ impl Screen {
             0
         };
 
-        let help = fit("↑/↓ move  Enter run  → input  ←/Esc exit", width);
+        let help = fit("↑/↓ move  Enter run  → input  ← edit  Esc exit", width);
         self.term
             .write_line(&style(help).dim().to_string())
             .context("could not draw selector help")?;

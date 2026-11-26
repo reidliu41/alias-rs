@@ -84,31 +84,43 @@ function als {
     fi
 
     if [[ "${1-}" == "list" && -t 0 && -t 1 && -t 2 && "${2-}" != "-h" && "${2-}" != "--help" ]]; then
-        local __als_result="$(command als __select "${@:2}")"
-        local __als_status=$?
-        if (( __als_status != 0 )); then
-            return $__als_status
-        fi
+        while true; do
+            local __als_result
+            __als_result="$(command als __select "${@:2}")"
+            local __als_status=$?
+            if (( __als_status != 0 )); then
+                return $__als_status
+            fi
 
-        if [[ "$__als_result" == *$'\n'* ]]; then
-            local __als_action="${__als_result%%$'\n'*}"
-            local __als_command="${__als_result#*$'\n'}"
-            case "$__als_action" in
-                execute)
-                    eval "$__als_command"
-                    return $?
-                    ;;
-                insert)
-                    local __als_line="$__als_command"
-                    vared -p '> ' __als_line || return 0
-                    if [[ -n "$__als_line" ]]; then
-                        eval "$__als_line"
+            if [[ "$__als_result" == *$'\n'* ]]; then
+                local __als_action="${__als_result%%$'\n'*}"
+                local __als_value="${__als_result#*$'\n'}"
+                case "$__als_action" in
+                    execute)
+                        eval "$__als_value"
                         return $?
-                    fi
-                    ;;
-            esac
-        fi
-        return 0
+                        ;;
+                    insert)
+                        local __als_line="$__als_value"
+                        vared -p '> ' __als_line || return 0
+                        if [[ -n "$__als_line" ]]; then
+                            eval "$__als_line"
+                            return $?
+                        fi
+                        ;;
+                    edit)
+                        command als edit "$__als_value"
+                        __als_status=$?
+                        if (( __als_status != 0 )); then
+                            return $__als_status
+                        fi
+                        source <(command als __sync zsh) || return $?
+                        continue
+                        ;;
+                esac
+            fi
+            return 0
+        done
     fi
 
     command als "$@"
@@ -270,6 +282,8 @@ mod tests {
         assert!(script.contains("command als __menu zsh"));
         assert!(script.contains("command als __history zsh"));
         assert!(script.contains("command als __add-history zsh"));
+        assert!(script.contains("edit)"));
+        assert!(script.contains("command als edit \"$__als_value\""));
         assert!(script.contains("builtin fc -l -n -r -t '%s|' 1"));
         assert!(script.contains("command als __sync zsh"));
         assert!(script.contains("compdef __als_complete als"));

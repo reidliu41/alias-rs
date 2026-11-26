@@ -98,7 +98,8 @@ In an initialized interactive shell, `als list` opens a searchable selector:
 - Type to fuzzy-search creation times, names, commands, descriptions, and tags.
 - Use Up/Down to move and Enter to run the selected command immediately.
 - Use Right to put the command in an editable input line; press Enter to run it.
-- Use Left, Escape, or Ctrl-C to exit without running anything.
+- Use Left to edit the selected alias, then return to the refreshed list.
+- Use Escape or Ctrl-C to exit without running anything.
 
 When output is redirected or piped, `als list` keeps its plain table output for
 scripts.

@@ -71,29 +71,40 @@ function als --description 'Manage shell aliases'
 
     if test (count $argv) -gt 0; and test "$argv[1]" = list; and isatty stdin; and isatty stdout; and isatty stderr
         if not contains -- -h $argv[2..-1]; and not contains -- --help $argv[2..-1]
-            set -l __als_result (command als __select $argv[2..-1])
-            set -l __als_status $status
-            if test $__als_status -ne 0
-                return $__als_status
-            end
-
-            if test (count $__als_result) -ge 2
-                set -l __als_action $__als_result[1]
-                set -l __als_command $__als_result[2]
-                switch $__als_action
-                    case execute
-                        eval "$__als_command"
-                        return $status
-                    case insert
-                        read --command="$__als_command" --prompt-str='> ' --shell --local __als_line
-                        or return 0
-                        if test -n "$__als_line"
-                            eval "$__als_line"
-                            return $status
-                        end
+            while true
+                set -l __als_result (command als __select $argv[2..-1])
+                set -l __als_status $status
+                if test $__als_status -ne 0
+                    return $__als_status
                 end
+
+                if test (count $__als_result) -ge 2
+                    set -l __als_action $__als_result[1]
+                    set -l __als_value $__als_result[2]
+                    switch $__als_action
+                        case execute
+                            eval "$__als_value"
+                            return $status
+                        case insert
+                            read --command="$__als_value" --prompt-str='> ' --shell --local __als_line
+                            or return 0
+                            if test -n "$__als_line"
+                                eval "$__als_line"
+                                return $status
+                            end
+                        case edit
+                            command als edit "$__als_value"
+                            set __als_status $status
+                            if test $__als_status -ne 0
+                                return $__als_status
+                            end
+                            command als __sync fish | source
+                            or return $status
+                            continue
+                    end
+                end
+                return 0
             end
-            return 0
         end
     end
 
@@ -200,6 +211,8 @@ mod tests {
         assert!(script.contains("command als __menu fish"));
         assert!(script.contains("command als __history fish"));
         assert!(script.contains("command als __add-history fish"));
+        assert!(script.contains("case edit"));
+        assert!(script.contains("command als edit \"$__als_value\""));
         assert!(script.contains("builtin history search --show-time='%s|' --null"));
         assert!(script.contains("command als __sync fish | source"));
         assert!(script.contains("-a add -d 'Add an alias'"));
